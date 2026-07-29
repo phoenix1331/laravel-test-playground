@@ -32,5 +32,9 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- Prevent Vite from throwing when there is no compiled manifest.
+             Feature tests don't run a build step, so the @vite() directive
+             would crash without this. The browser tests use a real built app. -->
+        <env name="VITE_IGNORE_MANIFEST_NOT_FOUND" value="true"/>
     </php>
 </phpunit>

@@ -6,17 +6,17 @@ A hands-on reference showing how unit, feature, and end-to-end tests differ — 
 
 ## What this repo demonstrates
 
-| Layer | Tool | What it tests | Speed |
+| Layer | Tool | What it tests | Typical speed |
 |---|---|---|---|
-| Unit | Pest | PHP logic in isolation — no DB, no HTTP | ~80 ms for the whole suite |
-| Feature | Pest + Laravel TestCase | Full server stack — routing, controllers, DB | ~1–2 s |
-| E2e | Playwright (TypeScript) | Real browser against a running server | ~10–30 s |
+| Unit | Pest | PHP logic in isolation — no DB, no HTTP | ~80 ms total |
+| Feature | Pest + Laravel TestCase | Full server stack — routing, controllers, DB | ~1–2 s total |
+| E2e | Playwright (TypeScript) | Real browser against a running server | ~15 s total |
 
-The domain is a simple **Post** system with role-based access (admin / customer). That gives every layer something real to test:
+The domain is a simple **Post** system with role-based access (admin / customer). Every layer has something real to test:
 
 - **Unit** — does `PostService::publish()` throw when the actor isn't the author or an admin?
 - **Feature** — does `PATCH /api/posts/{id}/publish` return 403 and leave the DB unchanged when called by the wrong user?
-- **E2e** — does a logged-in customer see the Publish button, click it, and see the post appear in the list?
+- **E2e** — can a logged-in customer fill in the create form, save a draft, and see the flash message?
 
 ---
 
@@ -25,33 +25,35 @@ The domain is a simple **Post** system with role-based access (admin / customer)
 ```
 app/
   Enums/
-    Role.php              # Admin | Customer
-    PostStatus.php        # Draft | Published
+    Role.php              # Admin | Customer — cast automatically on User
+    PostStatus.php        # Draft | Published — cast automatically on Post
   Models/
-    User.php              # role cast to Role enum
-    Post.php              # status cast to PostStatus enum
+    User.php              # isAdmin(), isCustomer(), posts() relationship
+    Post.php              # isPublished(), isDraft(), isOwnedBy() helpers
   Services/
-    PostService.php       # all business logic lives here
+    PostService.php       # all business logic lives here, not in the controller
   Http/
     Controllers/
-      PostController.php  # thin — delegates to PostService
+      PostController.php  # thin — translates HTTP ↔ service calls
     Requests/
       StorePostRequest.php
 
 tests/
   Unit/
-    PostServiceTest.php   # pure PHP, no DB, no HTTP
+    PostServiceTest.php   # pure PHP, no DB, no HTTP — tests rules in isolation
   Feature/
-    PostApiTest.php       # JSON API endpoints
-    PostWebTest.php       # Blade web routes
+    PostApiTest.php       # JSON API endpoints — status codes, JSON shape, DB state
+    PostWebTest.php       # Blade web routes — redirects, flash messages, DB state
 
 e2e/
-  posts.spec.ts           # Playwright browser tests
+  posts.spec.ts           # Playwright — real browser, real server, real user flows
 
 database/
   factories/
     UserFactory.php       # ->admin() and ->customer() states
     PostFactory.php       # ->published() and ->draft() states
+  seeders/
+    DatabaseSeeder.php    # seeds known admin + customer accounts with posts
 ```
 
 ---
@@ -76,7 +78,7 @@ php artisan migrate --seed
 npx playwright install chromium
 ```
 
-The seeder creates two known accounts:
+The seeder creates two known accounts you can use in the browser or e2e tests:
 
 | Email | Password | Role |
 |---|---|---|
@@ -88,36 +90,46 @@ The seeder creates two known accounts:
 ## Running the tests
 
 ### Unit tests
+
 ```bash
 npm run test:unit
 ```
 
-No infrastructure required. Tests run in under 100 ms and never touch a database or make HTTP requests. When one fails you know exactly which PHP class is broken.
+No infrastructure required. No database, no HTTP, no framework boot. Tests run
+in under 100 ms. When one fails you know exactly which PHP class is broken.
 
 ### Feature tests
+
 ```bash
 npm run test:feature
 ```
 
-Boots the full Laravel application against an in-memory SQLite database
-(reset between tests via `RefreshDatabase`). Tests the complete server-side
-stack: route → middleware → controller → service → database.
+Boots the full Laravel application against an in-memory SQLite database, reset
+between tests via `RefreshDatabase`. Tests the complete server-side stack:
+route → middleware → controller → service → database.
 
 ### E2e tests
-```bash
-npm run build                     # required — Playwright hits the real server which needs compiled assets
-php artisan migrate:fresh --seed  # required — e2e tests read from the real seeded database
 
-npm run test:e2e          # headless (default, good for CI)
-npm run test:e2e:headed   # visible browser window — you can watch every click
-npm run test:e2e:ui       # Playwright UI — pick tests, scrub the timeline, inspect screenshots
+```bash
+# Run once before e2e tests — Playwright hits the real server which needs compiled assets
+npm run build
+php artisan migrate:fresh --seed
+
+# Then run in whichever mode you prefer:
+npm run test:e2e          # headless — fastest, good for CI
+npm run test:e2e:headed   # visible Chrome window with 300 ms slowdown between actions
+npm run test:e2e:ui       # Playwright's own UI — pick tests, scrub the step timeline
 ```
 
-Launches Chromium, starts `php artisan serve` automatically, and drives the UI the same way a real user would. These catch bugs that only appear in the browser — rendering, JavaScript, form submissions with CSRF tokens.
+Playwright starts `php artisan serve` automatically before tests run.
 
-> **Tip:** Use `test:e2e:ui` when learning or debugging. It gives you a timeline of every action, before/after screenshots, and a DOM snapshot at each step.
+> **Tip for learning:** `npm run test:e2e:ui` opens a GUI where you can select
+> individual tests and watch a frame-by-frame replay of every action, including
+> before/after screenshots and a DOM snapshot at each step. It's the best way
+> to understand what e2e tests actually do.
 
-### All tests
+### All tests (unit + feature + e2e)
+
 ```bash
 npm test
 ```
@@ -130,14 +142,14 @@ npm test
 
 **Run when:** you change a service method, a model helper, or an enum.
 
-**What they prove:** the business rule is implemented correctly in PHP.
+**What they prove:** the business rule is correct in PHP.
 
 **What they don't prove:** that the rule is enforced at the HTTP boundary, or
-that the database is updated correctly.
+that the database is actually updated.
 
-Unit tests use plain `new Model()` and set attributes directly — no factories,
-no database, no framework boot. This is intentional. If a test needs the
-database, it belongs in Feature.
+Unit tests construct models with `new Model()` and set attributes directly —
+no factories, no database, no framework boot. This keeps them fast and focused.
+If a test needs the database, it belongs in Feature.
 
 ```php
 // No DB, no HTTP — just PHP objects and assertions
@@ -150,51 +162,74 @@ it('prevents a customer from publishing another users post', function () {
 });
 ```
 
+Datasets (Pest's data providers) drive the same test with multiple scenarios
+without copy-pasting the test body:
+
+```php
+dataset('publish scenarios', [
+    'admin can publish any post'        => [Role::Admin,    false, true],
+    'author can publish their own post' => [Role::Customer, true,  true],
+    'customer cannot publish others'    => [Role::Customer, false, false],
+]);
+
+it('enforces publish rules', function (Role $role, bool $isAuthor, bool $allowed) {
+    // one test body, three runs
+})->with('publish scenarios');
+```
+
 ### Feature tests — `tests/Feature/`
 
 **Run when:** you change a route, middleware, controller, or form request.
 
-**What they prove:** the HTTP contract is correct end-to-end on the server side.
+**What they prove:** the HTTP contract is correct — status codes, JSON shape,
+redirects, session flash, database state.
 
-**What they don't prove:** that the UI renders correctly, or that JavaScript works.
+**What they don't prove:** that the browser renders the response correctly, or
+that client-side JavaScript works.
 
 Feature tests use `actingAs()`, `postJson()`, `assertDatabaseHas()`, and
-`assertSessionHas()` — helpers that only exist because Laravel's TestCase is
-active. There is no browser.
+`assertSessionHas()` — Laravel-specific helpers that only work because
+`TestCase` boots the framework. There is no browser involved.
 
 ```php
-// Real HTTP, real DB, no browser
+// Real HTTP, real DB — no browser
 it('returns 403 when a customer publishes another users post', function () {
     $attacker = User::factory()->customer()->create();
     $post     = Post::factory()->draft()->create();
 
     $this->actingAs($attacker)
         ->patchJson("/api/posts/{$post->id}/publish")
-        ->assertForbidden();
+        ->assertForbidden()
+        ->assertJsonPath('message', 'You can only publish your own posts.');
 
+    // The DB must be unchanged — the feature test can verify this,
+    // the unit test cannot.
     $this->assertDatabaseHas('posts', ['id' => $post->id, 'status' => 'draft']);
 });
 ```
 
 ### E2e tests — `e2e/`
 
-**Run when:** you change a Blade view, add JavaScript, or touch any user-facing flow.
+**Run when:** you change a Blade view, add JavaScript, or modify any user-facing flow.
 
-**What they prove:** the whole system works together from the user's perspective.
+**What they prove:** the whole system works together from a real user's perspective
+— login, form submission, flash messages, page navigation.
 
-**What they don't prove:** exactly which layer broke when something fails — that's the job of unit and feature tests.
-
-E2e tests are the slowest and the most fragile (a CSS class rename can break a selector), but they give the highest confidence because they run in a real browser against a real server.
+**What they don't prove:** exactly which layer broke. That's the job of unit and
+feature tests. E2e tests tell you *something* is broken; the other layers tell
+you *what*.
 
 ```typescript
-// Real browser, real server, real HTTP, real rendering
-test('customer can create a post and see it listed after publishing', async ({ page }) => {
+// Real browser, real server, real rendering
+test('customer can fill the form and save a draft', async ({ page }) => {
     await loginAs(page, 'customer@example.com');
     await page.goto('/posts/create');
-    await page.fill('#title', 'My E2e Post');
-    await page.fill('#body', 'Written by Playwright.');
+    await page.fill('#title', 'My Playwright Post');
+    await page.fill('#body', 'This post was created by a Playwright e2e test.');
     await page.click('.save-draft-btn');
-    // ...
+
+    await expect(page).toHaveURL(/\/posts/);
+    await expect(page.locator('.flash-success')).toContainText('Post created as a draft');
 });
 ```
 
@@ -203,18 +238,54 @@ test('customer can create a post and see it listed after publishing', async ({ p
 ## Key design decisions
 
 **Service layer** — all business logic (who can publish, who can delete) lives in
-`PostService`, not in the controller. Unit tests can test the rules directly
-without HTTP; feature tests can test the HTTP contract without duplicating the
-rule assertions.
+`PostService`, not in the controller. This means unit tests can verify the rules
+with plain PHP objects, and feature tests can verify the HTTP contract without
+duplicating the rule assertions.
 
-**Enum casts** — `User::$role` and `Post::$status` are cast to PHP enums. You
-can never write an invalid status from application code, and the helpers
-(`isAdmin()`, `isPublished()`) read like plain English.
+**Enum casts** — `User::$role` and `Post::$status` are cast to PHP enums
+automatically by Eloquent. You can never accidentally write an invalid status to
+the database from application code, and helpers like `isAdmin()` and
+`isPublished()` read like plain English.
 
 **Factory states** — `User::factory()->admin()`, `Post::factory()->published()`.
-Named states make test setup read like a sentence and hide the database-level details of what "an admin" means.
+Named states make test setup read like a sentence and keep the database-level
+details out of the test body.
 
-**Datasets (data providers)** — instead of five near-identical tests, one test
-is declared and a dataset drives it with different inputs. See
-`tests/Unit/PostServiceTest.php` and `tests/Feature/PostApiTest.php` for
-examples.
+**Datasets** — instead of writing five near-identical tests, one test is declared
+and a dataset supplies the varying inputs. Pest runs the test once per row and
+labels each run with the dataset key, making failure messages self-explanatory.
+See `tests/Unit/PostServiceTest.php` and `tests/Feature/PostApiTest.php`.
+
+**`withoutVite()`** — feature tests call `withoutVite()` in the base `TestCase`
+so that Blade views render without a compiled Vite manifest. Playwright e2e tests
+hit the real server and need `npm run build` to have been run first.
+
+---
+
+## Test environment configuration (`phpunit.xml`)
+
+Unit and feature tests use their own environment, defined in `phpunit.xml` at the
+root of the project. Nothing in `.env` affects them. The key settings:
+
+```xml
+<env name="DB_CONNECTION" value="sqlite"/>
+<env name="DB_DATABASE" value=":memory:"/>
+```
+
+`DB_DATABASE=:memory:` means SQLite runs entirely in RAM — no file is created on
+disk and the database is discarded after each test run. Combined with
+`RefreshDatabase`, each individual test also gets a clean slate via transaction
+rollback.
+
+**To switch the test database**, edit those two lines in `phpunit.xml`:
+
+| Target | `DB_CONNECTION` | `DB_DATABASE` |
+|---|---|---|
+| SQLite in-memory (default) | `sqlite` | `:memory:` |
+| SQLite file on disk | `sqlite` | `/absolute/path/to/test.sqlite` |
+| MySQL | `mysql` | your test DB name (add host/user/pass envs too) |
+| PostgreSQL | `pgsql` | your test DB name (add host/user/pass envs too) |
+
+The e2e tests are **not** affected by `phpunit.xml` — Playwright drives the real
+running server, which reads from `.env`. That database is populated by
+`php artisan migrate:fresh --seed`.

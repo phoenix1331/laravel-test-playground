@@ -8,6 +8,8 @@
         "test:unit": "php artisan test --testsuite=Unit",
         "test:feature": "php artisan test --testsuite=Feature",
         "test:e2e": "playwright test",
+        "test:e2e:headed": "playwright test --headed",
+        "test:e2e:ui": "playwright test --ui",
         "test": "php artisan test && playwright test"
     },
     "devDependencies": {

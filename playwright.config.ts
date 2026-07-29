@@ -26,7 +26,13 @@ export default defineConfig({
     projects: [
         {
             name: 'chromium',
-            use: { ...devices['Desktop Chrome'] },
+            use: {
+                ...devices['Desktop Chrome'],
+                // slowMo adds a delay (ms) between each action when running
+                // headed or in UI mode, so you can follow what's happening.
+                // Has no effect in headless CI runs.
+                launchOptions: { slowMo: 300 },
+            },
         },
     ],
 

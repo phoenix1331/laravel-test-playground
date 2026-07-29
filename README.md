@@ -105,12 +105,17 @@ stack: route → middleware → controller → service → database.
 
 ### E2e tests
 ```bash
-npm run build          # required — Playwright hits the real server which needs compiled assets
+npm run build                     # required — Playwright hits the real server which needs compiled assets
 php artisan migrate:fresh --seed  # required — e2e tests read from the real seeded database
-npm run test:e2e
+
+npm run test:e2e          # headless (default, good for CI)
+npm run test:e2e:headed   # visible browser window — you can watch every click
+npm run test:e2e:ui       # Playwright UI — pick tests, scrub the timeline, inspect screenshots
 ```
 
 Launches Chromium, starts `php artisan serve` automatically, and drives the UI the same way a real user would. These catch bugs that only appear in the browser — rendering, JavaScript, form submissions with CSRF tokens.
+
+> **Tip:** Use `test:e2e:ui` when learning or debugging. It gives you a timeline of every action, before/after screenshots, and a DOM snapshot at each step.
 
 ### All tests
 ```bash

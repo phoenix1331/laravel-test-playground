@@ -92,8 +92,7 @@ The seeder creates two known accounts:
 npm run test:unit
 ```
 
-No infrastructure required. Tests run in under 100 ms and never touch a database
-or make HTTP requests. When one fails you know exactly which PHP class is broken.
+No infrastructure required. Tests run in under 100 ms and never touch a database or make HTTP requests. When one fails you know exactly which PHP class is broken.
 
 ### Feature tests
 ```bash
@@ -106,12 +105,12 @@ stack: route → middleware → controller → service → database.
 
 ### E2e tests
 ```bash
+npm run build          # required — Playwright hits the real server which needs compiled assets
+php artisan migrate:fresh --seed  # required — e2e tests read from the real seeded database
 npm run test:e2e
 ```
 
-Launches Chromium, starts `php artisan serve` automatically, and drives the UI
-the same way a real user would. These catch bugs that only appear in the
-browser — rendering, JavaScript, form submissions with CSRF tokens.
+Launches Chromium, starts `php artisan serve` automatically, and drives the UI the same way a real user would. These catch bugs that only appear in the browser — rendering, JavaScript, form submissions with CSRF tokens.
 
 ### All tests
 ```bash
@@ -178,12 +177,9 @@ it('returns 403 when a customer publishes another users post', function () {
 
 **What they prove:** the whole system works together from the user's perspective.
 
-**What they don't prove:** exactly which layer broke when something fails — that's
-the job of unit and feature tests.
+**What they don't prove:** exactly which layer broke when something fails — that's the job of unit and feature tests.
 
-E2e tests are the slowest and the most fragile (a CSS class rename can break a
-selector), but they give the highest confidence because they run in a real browser
-against a real server.
+E2e tests are the slowest and the most fragile (a CSS class rename can break a selector), but they give the highest confidence because they run in a real browser against a real server.
 
 ```typescript
 // Real browser, real server, real HTTP, real rendering
@@ -211,8 +207,7 @@ can never write an invalid status from application code, and the helpers
 (`isAdmin()`, `isPublished()`) read like plain English.
 
 **Factory states** — `User::factory()->admin()`, `Post::factory()->published()`.
-Named states make test setup read like a sentence and hide the database-level
-details of what "an admin" means.
+Named states make test setup read like a sentence and hide the database-level details of what "an admin" means.
 
 **Datasets (data providers)** — instead of five near-identical tests, one test
 is declared and a dataset drives it with different inputs. See

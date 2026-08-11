@@ -10,7 +10,10 @@ A hands-on reference showing how unit, feature, and end-to-end tests differ — 
 |---|---|---|---|
 | Unit | Pest | PHP logic in isolation — no DB, no HTTP | ~80 ms total |
 | Feature | Pest + Laravel TestCase | Full server stack — routing, controllers, DB | ~1–2 s total |
-| E2e | Playwright (TypeScript) | Real browser against a running server | ~15 s total |
+| E2e (Playwright) | Playwright (TypeScript) | Real browser against a running server | ~15 s total |
+| E2e (Dusk) | Laravel Dusk (PHP) | Real browser against a running server | ~15 s total |
+
+> **Playwright vs Dusk:** Both suites run identical scenarios against a real browser. Playwright is TypeScript-native and runs via Node; Dusk is PHP-native and runs via `php artisan dusk`. They exist side-by-side in this repo so you can compare the two APIs directly.
 
 The domain is a simple **Post** system with role-based access (admin / customer). Every layer has something real to test:
 
@@ -40,13 +43,21 @@ app/
 
 tests/
   Unit/
-    PostServiceTest.php   # pure PHP, no DB, no HTTP — tests rules in isolation
+    PostServiceTest.php                     # pure PHP, no DB, no HTTP — tests rules in isolation
   Feature/
-    PostApiTest.php       # JSON API endpoints — status codes, JSON shape, DB state
-    PostWebTest.php       # Blade web routes — redirects, flash messages, DB state
+    PostApiTest.php                         # JSON API endpoints — status codes, JSON shape, DB state
+    PostWebTest.php                         # Blade web routes — redirects, flash messages, DB state
+  Browser/                                  # Laravel Dusk — PHP browser tests (mirrors e2e/)
+    Concerns/
+      InteractsWithAuth.php                 # loginAs() helper — PHP equivalent of e2e/posts.spec.ts loginAs()
+    PublicPostsTest.php                     # /posts page — guest view
+    LoginTest.php                           # login form — valid, invalid, post-login UI
+    CreatePostTest.php                      # create post form — happy path, validation, guest redirect
+    PublishDeletePostTest.php               # admin publish/delete actions, role badges
+  DuskTestCase.php                          # base class for all Dusk tests — wires up ChromeDriver
 
 e2e/
-  posts.spec.ts           # Playwright — real browser, real server, real user flows
+  posts.spec.ts           # Playwright — real browser, real server, real user flows (mirrors tests/Browser/)
 
 database/
   factories/
@@ -76,6 +87,7 @@ cp .env.example .env
 php artisan key:generate
 php artisan migrate --seed
 npx playwright install chromium
+php artisan dusk:chrome-driver  # installs the ChromeDriver binary for Dusk
 ```
 
 The seeder creates two known accounts you can use in the browser or e2e tests:
@@ -127,6 +139,31 @@ Playwright starts `php artisan serve` automatically before tests run.
 > individual tests and watch a frame-by-frame replay of every action, including
 > before/after screenshots and a DOM snapshot at each step. It's the best way
 > to understand what e2e tests actually do.
+
+### Browser tests (Dusk)
+
+```bash
+# 1. Seed the real SQLite database — Dusk cannot use :memory:
+npm run dusk:fresh
+
+# 2. Run in whichever mode you prefer:
+npm run test:dusk          # headless — fastest, good for CI
+npm run test:dusk:headed   # visible Chrome window so you can watch the browser
+```
+
+Unlike Playwright, Dusk does **not** start the server automatically. If the
+server isn't already running, `php artisan dusk` will start one for you via
+the `APP_URL` in `.env.dusk.local`. You can also start it manually first:
+
+```bash
+php artisan serve &
+npm run test:dusk
+```
+
+> **Tip for learning:** Run `npm run test:dusk:headed` to watch Chrome open and
+> perform each test step in real time. This is the best way to understand what
+> Dusk is doing — you can see the form fill, the redirect, and the flash message
+> appear exactly as a user would see them.
 
 ### All tests (unit + feature + e2e)
 
@@ -233,6 +270,70 @@ test('customer can fill the form and save a draft', async ({ page }) => {
 });
 ```
 
+### Browser tests (Dusk) — `tests/Browser/`
+
+**Run when:** the same situations as Playwright e2e — you change a Blade view,
+add JavaScript, or modify a user-facing flow.
+
+**What they prove:** identical to Playwright — the whole system works together
+from a real user's perspective, written in PHP instead of TypeScript.
+
+**What they don't prove:** exactly which layer broke (same caveat as Playwright).
+
+Dusk wraps ChromeDriver in a fluent PHP API that will feel familiar if you've
+used Laravel's HTTP testing helpers. The `$browser` object chains assertions
+directly instead of `expect()`:
+
+```php
+// Real browser, real server, real rendering — PHP API
+test('customer can fill the form and save a draft', function () {
+    $this->browse(function (Browser $browser) {
+        $this->loginAs($browser, 'customer@example.com');
+
+        $browser->visit('/posts/create')
+                ->type('#title', 'My Dusk Post')
+                ->type('#body', 'This post was created by a Dusk browser test.')
+                ->click('.save-draft-btn')
+                ->assertPathIs('/posts')
+                ->assertSee('Post created as a draft');
+    });
+})->uses(InteractsWithAuth::class);
+```
+
+#### Playwright vs Dusk — API comparison
+
+The test scenarios in `tests/Browser/` deliberately mirror those in `e2e/posts.spec.ts`.
+Here is the full API mapping:
+
+| Action | Playwright (TypeScript) | Dusk (PHP) |
+|---|---|---|
+| Navigate | `page.goto('/path')` | `$browser->visit('/path')` |
+| Fill input | `page.fill('#id', 'value')` | `->type('#id', 'value')` |
+| Click element | `page.click('.selector')` | `->click('.selector')` |
+| Assert URL | `expect(page).toHaveURL(/path/)` | `->assertPathIs('/path')` |
+| Assert title | `expect(page).toHaveTitle(/text/)` | `->assertTitleContains('text')` |
+| Assert visible text | `expect(locator).toContainText('…')` | `->assertSee('…')` |
+| Assert text in element | `expect(locator('h1')).toContainText` | `->assertSeeIn('h1', '…')` |
+| Assert text absent | `expect(locator).not.toBeVisible()` | `->assertDontSee('…')` |
+| Assert element present | `expect(locator).toBeVisible()` | `->assertPresent('.selector')` |
+| Assert link present | `locator('a', {hasText: '…'})` | `->assertSeeLink('…')` |
+| Count elements | `locator('…').count()` | `count($browser->elements('…'))` |
+| Accept JS dialog | `page.once('dialog', d => d.accept())` | `->acceptDialog()` |
+| Shared login helper | `async function loginAs(page, email)` | `trait InteractsWithAuth` |
+| Wait for navigation | `page.waitForURL('**/posts')` | `->waitForLocation('/posts')` |
+
+#### Key configuration differences from Playwright
+
+| Concern | Playwright | Dusk |
+|---|---|---|
+| Language | TypeScript | PHP |
+| Config file | `playwright.config.ts` | `phpunit.dusk.xml` + `.env.dusk.local` |
+| Server startup | Automatic (`webServer` in config) | Manual or automatic via `APP_URL` |
+| Database | File-based SQLite (seeded manually) | File-based SQLite (seeded manually) |
+| Session handling | Isolated context per test | Shared browser; form-based login per test |
+| Headed mode | `--headed` flag | `--without-headless` flag |
+| npm script | `npm run test:e2e` | `npm run test:dusk` |
+
 ---
 
 ## Key design decisions
@@ -262,7 +363,9 @@ hit the real server and need `npm run build` to have been run first.
 
 ---
 
-## Test environment configuration (`phpunit.xml`)
+## Test environment configuration
+
+### Unit and feature tests (`phpunit.xml`)
 
 Unit and feature tests use their own environment, defined in `phpunit.xml` at the
 root of the project. Nothing in `.env` affects them. The key settings:
@@ -286,6 +389,26 @@ rollback.
 | MySQL | `mysql` | your test DB name (add host/user/pass envs too) |
 | PostgreSQL | `pgsql` | your test DB name (add host/user/pass envs too) |
 
-The e2e tests are **not** affected by `phpunit.xml` — Playwright drives the real
-running server, which reads from `.env`. That database is populated by
-`php artisan migrate:fresh --seed`.
+### Browser tests — Playwright and Dusk
+
+Neither Playwright nor Dusk is affected by `phpunit.xml`. Both drive a real
+running server, which reads from `.env` (or `.env.dusk.local` for Dusk).
+
+**Playwright** reads `playwright.config.ts` and uses whatever `.env` the
+running server has loaded.
+
+**Dusk** reads `phpunit.dusk.xml` for PHPUnit settings and `.env.dusk.local`
+for environment overrides (merged on top of `.env` when `APP_ENV=dusk`). The
+critical overrides are:
+
+```bash
+SESSION_DRIVER=cookie   # sessions must survive across real HTTP requests
+DB_DATABASE=/path/to/database.sqlite  # file-based, not :memory:
+```
+
+Both suites require the database to be seeded before running:
+
+```bash
+php artisan migrate:fresh --seed          # for Playwright
+npm run dusk:fresh                        # for Dusk (sets --env=dusk)
+```

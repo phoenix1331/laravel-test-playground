@@ -1,7 +1,10 @@
 <?php
 
+// Every test inside tests/Browser/ gets DuskTestCase as its base, which
+// wires up ChromeDriver and the Dusk browser() helper. We do NOT attach
+// RefreshDatabase here — Dusk tests run against a real HTTP server and a
+// real file-based SQLite database seeded via `npm run dusk:fresh`.
 pest()->extend(Tests\DuskTestCase::class)
-//  ->use(Illuminate\Foundation\Testing\DatabaseMigrations::class)
     ->in('Browser');
 
 use Illuminate\Foundation\Testing\RefreshDatabase;

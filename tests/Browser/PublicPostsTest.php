@@ -3,11 +3,39 @@
 /**
  * Browser tests — Public posts index
  *
- * These tests cover the /posts page without requiring a logged-in user.
- * They are the Dusk equivalent of the 'public posts index' describe block
- * in e2e/posts.spec.ts.
+ * WHAT IS A DUSK BROWSER TEST?
+ * Dusk launches a real Chromium browser via ChromeDriver, navigates to a URL,
+ * and interacts with the page exactly as a user would — clicking, typing,
+ * reading visible text. The full stack is exercised: browser → HTTP →
+ * Laravel → database → rendered HTML → back to the browser.
  *
- * SETUP: php artisan migrate:fresh --seed must be run before this suite.
+ * HOW THIS DIFFERS FROM A FEATURE TEST
+ * Feature tests (tests/Feature/) fire HTTP requests internally with no
+ * browser. They cannot test anything that happens client-side: JavaScript,
+ * real session cookies, visible flash messages, or multi-step user flows.
+ * Dusk tests can test all of that, but they are slower (ChromeDriver must
+ * start) and require a running server and a seeded file-based database.
+ *
+ * HOW THIS RELATES TO THE PLAYWRIGHT SUITE
+ * The tests in this file are the PHP/Dusk equivalent of the
+ * 'public posts index' describe block in e2e/posts.spec.ts. The scenarios
+ * are identical — only the language and API differ:
+ *
+ *   Playwright (TypeScript)          Dusk (PHP)
+ *   -------------------------------- --------------------------------
+ *   page.goto('/posts')              $browser->visit('/posts')
+ *   expect(page).toHaveTitle(/…/)    ->assertTitleContains('…')
+ *   page.locator('h1')               ->assertSeeIn('h1', '…')
+ *   expect(locator).toBeVisible()    ->assertPresent('…')
+ *   expect(page).not.toHaveText(…)  ->assertDontSee('…')
+ *
+ * SETUP
+ * 1. Seed the real SQLite database (Dusk cannot use :memory:):
+ *      npm run dusk:fresh
+ * 2. Run just this file:
+ *      php artisan dusk tests/Browser/PublicPostsTest.php
+ *    Or run the full suite:
+ *      npm run test:dusk
  */
 
 use Laravel\Dusk\Browser;

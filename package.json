@@ -10,6 +10,9 @@
         "test:e2e": "playwright test",
         "test:e2e:headed": "playwright test --headed",
         "test:e2e:ui": "playwright test --ui",
+        "test:dusk": "php artisan dusk",
+        "test:dusk:headed": "php artisan dusk --without-headless",
+        "dusk:fresh": "php artisan migrate:fresh --seed --env=dusk",
         "test": "php artisan test && playwright test"
     },
     "devDependencies": {

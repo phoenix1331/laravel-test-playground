@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    phpunit.dusk.xml — PHPUnit config for Laravel Dusk browser tests only.
+
+    This file is intentionally separate from phpunit.xml so that running
+    `php artisan test` (Unit + Feature) never attempts to boot ChromeDriver.
+    Dusk tests are run via `php artisan dusk` which uses this config.
+
+    Key differences from phpunit.xml:
+    - bootstrap: Dusk needs vendor/autoload.php (not the Pest bootstrap)
+    - DB_DATABASE: a real file path, not :memory: — the browser hits an
+      actual HTTP server in a separate process, so in-memory SQLite is lost
+      between requests. See .env.dusk.local for the full env override.
+    - SESSION_DRIVER: cookie (not array) so sessions survive across requests
+      during a single browser session.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         processIsolation="false"
+         stopOnError="false"
+         stopOnFailure="false"
+         cacheDirectory=".phpunit.cache">
+    <testsuites>
+        <testsuite name="Browser">
+            <directory suffix="Test.php">./tests/Browser</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+</phpunit>
